@@ -98,7 +98,10 @@ export default function Home() {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to scrape profiles');
+        // Show detailed error message if available
+        const errorMessage = data.error || 'Failed to scrape profiles';
+        const errorDetails = data.details ? ` ${data.details}` : '';
+        throw new Error(errorMessage + errorDetails);
       }
 
       // Handle different response formats
@@ -215,12 +218,19 @@ export default function Home() {
                 id="linkedin-url"
                 type="url"
                 value={linkedinPostUrl}
-                onChange={(e) => setLinkedinPostUrl(e.target.value)}
+                onChange={(e) => {
+                  setLinkedinPostUrl(e.target.value);
+                  // Clear error when user starts typing
+                  if (error) setError(null);
+                }}
                 placeholder="https://www.linkedin.com/posts/..."
                 className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
                 required
                 disabled={loading || !selectedProjectId}
               />
+              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                Note: Pulse posts (linkedin.com/pulse/...) are not supported. LinkedIn limits visibility to 3,000 profiles per post.
+              </p>
             </div>
             <button
               type="submit"
@@ -236,14 +246,31 @@ export default function Home() {
           <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 mb-8">
             <p className="text-red-800 dark:text-red-200 font-medium">Error:</p>
             <p className="text-red-600 dark:text-red-300">{error}</p>
+            {error.includes('session') && (
+              <p className="text-red-600 dark:text-red-300 text-sm mt-2">
+                💡 Tip: Install the PhantomBuster browser extension and reconnect your LinkedIn account to refresh your session cookie.
+              </p>
+            )}
+            {error.includes('Pulse') && (
+              <p className="text-red-600 dark:text-red-300 text-sm mt-2">
+                💡 Tip: Use regular LinkedIn posts (linkedin.com/posts/...) instead of Pulse articles.
+              </p>
+            )}
           </div>
         )}
 
         {profiles.length > 0 && (
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6">
-            <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">
-              Found {profiles.length} Profile{profiles.length !== 1 ? 's' : ''}
-            </h2>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+                Found {profiles.length} Profile{profiles.length !== 1 ? 's' : ''}
+              </h2>
+              {profiles.length >= 3000 && (
+                <span className="text-xs bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-200 px-3 py-1 rounded-full">
+                  LinkedIn's 3,000 profile limit reached
+                </span>
+              )}
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {profiles.map((profile, index) => (
                 <div
