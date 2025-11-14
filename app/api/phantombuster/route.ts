@@ -59,17 +59,61 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Extract company/page identifier from post URL
+    // LinkedIn post URLs format: https://www.linkedin.com/posts/company-name_or_person-name_post-id
+    const urlMatch = linkedinPostUrl.match(/linkedin\.com\/posts\/([^\/\?]+)/);
+    let companyUrl = null;
+    
+    if (urlMatch) {
+      const identifier = urlMatch[1];
+      // Try company page first (most common)
+      companyUrl = `https://www.linkedin.com/company/${identifier.split('_')[0]}/`;
+    }
+
     // Launch PhantomBuster agent
-    // For "LinkedIn Post Commenter and Liker Scraper" with "Single LinkedIn Post URL" source
-    // The parameter name is typically 'url' based on the field label "Enter the LinkedIn URL to scrape"
+    // For "LinkedIn Post Commenter and Liker Scraper" 
+    // Based on error: requires companyUrl, postEngagersToExtract, and sessionCookie (min 15 chars)
+    const sessionCookie = process.env.LINKEDIN_SESSION_COOKIE || '';
+    
+    // Build arguments based on Phantom requirements
+    const argument: any = {};
+    
+    // Required: companyUrl
+    if (companyUrl) {
+      argument.companyUrl = companyUrl;
+    } else {
+      // If we can't extract it, try using the post URL's base
+      // Some Phantoms accept the post URL as companyUrl
+      argument.companyUrl = linkedinPostUrl.split('/posts/')[0] + '/';
+    }
+    
+    // Required: postEngagersToExtract (the post URL to scrape)
+    argument.postEngagersToExtract = linkedinPostUrl;
+    
+    // Required: sessionCookie (must be at least 15 characters)
+    if (sessionCookie && sessionCookie.length >= 15) {
+      argument.sessionCookie = sessionCookie;
+    } else {
+      // Return error if session cookie is missing or too short
+      return NextResponse.json(
+        {
+          error: 'LinkedIn session cookie required',
+          details: 'This Phantom requires a LinkedIn session cookie (at least 15 characters). Please add LINKEDIN_SESSION_COOKIE to your environment variables. You can get it from the PhantomBuster browser extension.',
+        },
+        { status: 400 }
+      );
+    }
+
+    console.log('Launching Phantom with arguments:', {
+      ...argument,
+      sessionCookie: sessionCookie ? `${sessionCookie.substring(0, 10)}...` : 'empty',
+    });
+
     const launchResponse = await axios.post(
       `https://api.phantombuster.com/api/v2/agents/launch`,
       {
         id: phantombusterPhantomId,
-        argument: {
-          url: linkedinPostUrl, // Parameter name for "Single LinkedIn Post URL" source
-          sessionCookie: process.env.LINKEDIN_SESSION_COOKIE || '',
-        },
+        argument,
       },
       {
         headers: {
@@ -140,7 +184,31 @@ export async function POST(request: NextRequest) {
       }
 
       if (outputResponse.data.output) {
-        const profilesData = outputResponse.data.output;
+        const outputData = outputResponse.data.output;
+        
+        // Check if output contains an error message (PhantomBuster sometimes returns errors in output)
+        if (typeof outputData === 'string' && (outputData.includes('Error:') || outputData.includes('❌'))) {
+          console.error('PhantomBuster error in output:', outputData);
+          
+          // Extract error details
+          let errorDetails = 'PhantomBuster execution failed';
+          if (outputData.includes('must have required property')) {
+            errorDetails = 'Phantom configuration error: Missing required parameters. Please check your Phantom settings.';
+          } else if (outputData.includes('sessionCookie') && outputData.includes('must NOT have fewer than 15 characters')) {
+            errorDetails = 'LinkedIn session cookie is required. Please add your LinkedIn session cookie in PhantomBuster settings or environment variables.';
+          }
+          
+          return NextResponse.json(
+            {
+              error: 'PhantomBuster execution failed',
+              details: errorDetails,
+              rawOutput: outputData,
+            },
+            { status: 500 }
+          );
+        }
+        
+        const profilesData = outputData;
         
         // Log raw output for debugging
         console.log('Raw PhantomBuster output:', JSON.stringify(profilesData, null, 2));
