@@ -76,16 +76,20 @@ export async function POST(request: NextRequest) {
       userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36',
     };
     
-    // Session cookie: PhantomBuster extension automatically injects this
-    // If provided via env var, use it (but it will expire - extension is preferred)
-    // The extension manages cookie refresh automatically
+    // Session cookie: Required by Phantom schema validation
+    // PhantomBuster extension will override this with the actual cookie if connected
+    // If extension is not connected, we need a valid cookie from env var
     if (sessionCookie && sessionCookie.length >= 15) {
       argument.sessionCookie = sessionCookie;
-      console.log('Using provided session cookie (note: cookies expire - PhantomBuster extension auto-refreshes)');
+      console.log('Using provided session cookie from environment variable');
     } else {
-      console.log('No session cookie in env - PhantomBuster extension will inject it automatically');
-      // PhantomBuster extension connected to the Phantom will automatically inject
-      // the session cookie and handle refresh when it expires
+      // The Phantom schema requires sessionCookie, but if the extension is connected,
+      // PhantomBuster will inject the real cookie automatically
+      // However, we still need to provide a placeholder to pass schema validation
+      // Using a placeholder that PhantomBuster will replace with extension cookie
+      argument.sessionCookie = 'EXTENSION_WILL_INJECT'; // Placeholder - extension will replace
+      console.log('No session cookie in env - using placeholder (PhantomBuster extension should inject real cookie)');
+      console.warn('WARNING: If extension is not connected, this will fail. Add LINKEDIN_SESSION_COOKIE to env vars or connect the extension.');
     }
 
     console.log('Launching Phantom with arguments:', {
@@ -180,8 +184,8 @@ export async function POST(request: NextRequest) {
           
           if (outputData.includes('must have required property')) {
             errorDetails = 'Phantom configuration error: Missing required parameters. Please check your Phantom settings.';
-          } else if (outputData.includes('sessionCookie') && outputData.includes('must NOT have fewer than 15 characters')) {
-            errorDetails = 'LinkedIn session cookie is required. The PhantomBuster browser extension should provide this automatically. If you\'re using a manual cookie, it may have expired.';
+          } else if (outputData.includes('sessionCookie') && (outputData.includes('must NOT have fewer than 15 characters') || outputData.includes('must have required property'))) {
+            errorDetails = 'LinkedIn session cookie is required. Either: 1) Connect the PhantomBuster browser extension to your Phantom (recommended - auto-refreshes), or 2) Add LINKEDIN_SESSION_COOKIE to your environment variables.';
             needsCookieRefresh = true;
           } else if (outputData.includes('session') || outputData.includes('cookie') || outputData.includes('authentication') || outputData.includes('login')) {
             errorDetails = 'LinkedIn session expired or invalid. Please refresh your LinkedIn connection in PhantomBuster (reconnect via browser extension).';
