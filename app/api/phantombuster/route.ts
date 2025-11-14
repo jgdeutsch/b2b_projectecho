@@ -42,9 +42,19 @@ export async function POST(request: NextRequest) {
     const phantombusterApiKey = process.env.PHANTOMBUSTER_API_KEY;
     const phantombusterPhantomId = process.env.PHANTOMBUSTER_PHANTOM_ID;
 
+    // Debug logging (remove in production if needed)
+    console.log('Environment check:', {
+      hasApiKey: !!phantombusterApiKey,
+      hasPhantomId: !!phantombusterPhantomId,
+      phantomIdLength: phantombusterPhantomId?.length || 0,
+    });
+
     if (!phantombusterApiKey || !phantombusterPhantomId) {
       return NextResponse.json(
-        { error: 'PhantomBuster API credentials not configured' },
+        {
+          error: 'PhantomBuster API credentials not configured',
+          details: `Missing: ${!phantombusterApiKey ? 'PHANTOMBUSTER_API_KEY' : ''} ${!phantombusterPhantomId ? 'PHANTOMBUSTER_PHANTOM_ID' : ''}`.trim(),
+        },
         { status: 500 }
       );
     }
