@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 interface LinkedInProfile {
   name?: string;
@@ -9,14 +9,76 @@ interface LinkedInProfile {
   [key: string]: any;
 }
 
+interface Project {
+  id: number;
+  name: string;
+  createdAt: string;
+}
+
 export default function Home() {
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
+  const [newProjectName, setNewProjectName] = useState('');
+  const [showNewProjectForm, setShowNewProjectForm] = useState(false);
   const [linkedinPostUrl, setLinkedinPostUrl] = useState('');
   const [profiles, setProfiles] = useState<LinkedInProfile[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    fetchProjects();
+  }, []);
+
+  const fetchProjects = async () => {
+    try {
+      const response = await fetch('/api/projects');
+      const data = await response.json();
+      if (data.success) {
+        setProjects(data.projects);
+        if (data.projects.length > 0 && !selectedProjectId) {
+          setSelectedProjectId(data.projects[0].id);
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching projects:', err);
+    }
+  };
+
+  const handleCreateProject = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newProjectName.trim()) return;
+
+    try {
+      const response = await fetch('/api/projects', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ name: newProjectName.trim() }),
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        setProjects([...projects, data.project]);
+        setSelectedProjectId(data.project.id);
+        setNewProjectName('');
+        setShowNewProjectForm(false);
+      } else {
+        setError(data.error || 'Failed to create project');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to create project');
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    if (!selectedProjectId) {
+      setError('Please select or create a project first');
+      return;
+    }
+
     setLoading(true);
     setError(null);
     setProfiles([]);
@@ -27,7 +89,10 @@ export default function Home() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ linkedinPostUrl }),
+        body: JSON.stringify({ 
+          linkedinPostUrl,
+          projectId: selectedProjectId,
+        }),
       });
 
       const data = await response.json();
@@ -71,7 +136,74 @@ export default function Home() {
         </div>
 
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 mb-8">
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">
+            Project Selection
+          </h2>
+          
+          {projects.length > 0 && (
+            <div className="mb-4">
+              <label
+                htmlFor="project-select"
+                className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+              >
+                Select Project
+              </label>
+              <select
+                id="project-select"
+                value={selectedProjectId || ''}
+                onChange={(e) => setSelectedProjectId(Number(e.target.value))}
+                className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+                disabled={loading}
+              >
+                {projects.map((project) => (
+                  <option key={project.id} value={project.id}>
+                    {project.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {!showNewProjectForm ? (
+            <button
+              type="button"
+              onClick={() => setShowNewProjectForm(true)}
+              className="mb-4 text-indigo-600 dark:text-indigo-400 hover:underline text-sm font-medium"
+            >
+              + Create New Project
+            </button>
+          ) : (
+            <form onSubmit={handleCreateProject} className="mb-4 space-y-2">
+              <input
+                type="text"
+                value={newProjectName}
+                onChange={(e) => setNewProjectName(e.target.value)}
+                placeholder="Project name"
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+                autoFocus
+              />
+              <div className="flex gap-2">
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-medium"
+                >
+                  Create
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowNewProjectForm(false);
+                    setNewProjectName('');
+                  }}
+                  className="px-4 py-2 bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-lg text-sm font-medium"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          )}
+
+          <form onSubmit={handleSubmit} className="space-y-4 mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
             <div>
               <label
                 htmlFor="linkedin-url"
@@ -87,12 +219,12 @@ export default function Home() {
                 placeholder="https://www.linkedin.com/posts/..."
                 className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
                 required
-                disabled={loading}
+                disabled={loading || !selectedProjectId}
               />
             </div>
             <button
               type="submit"
-              disabled={loading || !linkedinPostUrl}
+              disabled={loading || !linkedinPostUrl || !selectedProjectId}
               className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
             >
               {loading ? 'Scraping profiles...' : 'Scrape Reactors'}

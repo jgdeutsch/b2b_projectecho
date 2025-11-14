@@ -1,13 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server';
 import axios from 'axios';
+import {
+  createLinkedInPost,
+  getLinkedInPostByUrl,
+  createLinkedInProfiles,
+} from '@/lib/db/queries';
 
 export async function POST(request: NextRequest) {
   try {
-    const { linkedinPostUrl } = await request.json();
+    const { linkedinPostUrl, projectId } = await request.json();
 
     if (!linkedinPostUrl) {
       return NextResponse.json(
         { error: 'LinkedIn post URL is required' },
+        { status: 400 }
+      );
+    }
+
+    if (!projectId) {
+      return NextResponse.json(
+        { error: 'Project ID is required' },
         { status: 400 }
       );
     }
@@ -62,9 +74,47 @@ export async function POST(request: NextRequest) {
       );
 
       if (outputResponse.data.output) {
+        const profilesData = outputResponse.data.output;
+        
+        // Parse profiles - handle different response formats
+        let profiles: Array<{ profileUrl: string; name?: string; headline?: string }> = [];
+        
+        if (Array.isArray(profilesData)) {
+          profiles = profilesData.map((profile: any) => ({
+            profileUrl: profile.profileUrl || profile.url || profile.linkedinUrl || '',
+            name: profile.name || profile.fullName || null,
+            headline: profile.headline || profile.title || null,
+          })).filter((p: any) => p.profileUrl);
+        } else if (profilesData && typeof profilesData === 'object') {
+          // Try to extract array from common keys
+          const profilesArray = Object.values(profilesData).find(
+            (val) => Array.isArray(val) && val.length > 0
+          ) as any[] | undefined;
+          
+          if (profilesArray) {
+            profiles = profilesArray.map((profile: any) => ({
+              profileUrl: profile.profileUrl || profile.url || profile.linkedinUrl || '',
+              name: profile.name || profile.fullName || null,
+              headline: profile.headline || profile.title || null,
+            })).filter((p: any) => p.profileUrl);
+          }
+        }
+
+        // Check if post already exists
+        let post = await getLinkedInPostByUrl(linkedinPostUrl);
+        
+        if (!post) {
+          // Create new post in database
+          post = await createLinkedInPost(projectId, linkedinPostUrl);
+        }
+
+        // Save profiles to database
+        const savedProfiles = await createLinkedInProfiles(post.id, profiles);
+
         return NextResponse.json({
           success: true,
-          profiles: outputResponse.data.output,
+          profiles: savedProfiles,
+          postId: post.id,
           containerId,
         });
       }
