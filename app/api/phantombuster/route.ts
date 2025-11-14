@@ -230,6 +230,11 @@ export async function POST(request: NextRequest) {
           profiles: savedProfiles,
           postId: post.id,
           containerId,
+          debug: {
+            rawOutput: profilesData,
+            parsedCount: profiles.length,
+            savedCount: savedProfiles.length,
+          },
         });
       }
 
