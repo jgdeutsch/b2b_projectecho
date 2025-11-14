@@ -90,18 +90,18 @@ export async function POST(request: NextRequest) {
     // Required: postEngagersToExtract (the post URL to scrape)
     argument.postEngagersToExtract = linkedinPostUrl;
     
-    // Required: sessionCookie (must be at least 15 characters)
+    // Session cookie: Optional if using PhantomBuster browser extension
+    // The extension automatically manages LinkedIn authentication
+    // Only add if explicitly provided and valid
     if (sessionCookie && sessionCookie.length >= 15) {
       argument.sessionCookie = sessionCookie;
+      console.log('Using provided session cookie');
     } else {
-      // Return error if session cookie is missing or too short
-      return NextResponse.json(
-        {
-          error: 'LinkedIn session cookie required',
-          details: 'This Phantom requires a LinkedIn session cookie (at least 15 characters). Please add LINKEDIN_SESSION_COOKIE to your environment variables. You can get it from the PhantomBuster browser extension.',
-        },
-        { status: 400 }
-      );
+      // Don't include sessionCookie - let PhantomBuster extension handle it
+      // Some Phantoms work without explicit sessionCookie when extension is connected
+      console.log('No session cookie provided - PhantomBuster extension will handle authentication');
+      // Note: Some Phantoms may still require it, but we'll let PhantomBuster return the error
+      // if the extension isn't properly configured
     }
 
     console.log('Launching Phantom with arguments:', {
