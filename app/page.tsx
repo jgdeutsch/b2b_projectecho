@@ -358,10 +358,18 @@ export default function Home() {
           <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 mb-8">
             <p className="text-red-800 dark:text-red-200 font-medium">Error:</p>
             <p className="text-red-600 dark:text-red-300">{error}</p>
-            {error.includes('session') && (
-              <p className="text-red-600 dark:text-red-300 text-sm mt-2">
-                💡 Tip: Install the PhantomBuster browser extension and reconnect your LinkedIn account to refresh your session cookie.
-              </p>
+            {(error.includes('session') || error.includes('cookie') || error.includes('authentication')) && (
+              <div className="text-red-600 dark:text-red-300 text-sm mt-2 space-y-1">
+                <p>💡 <strong>Session Cookie Expired:</strong></p>
+                <p>LinkedIn session cookies expire periodically. To refresh:</p>
+                <ol className="list-decimal list-inside ml-2 space-y-1">
+                  <li>Open PhantomBuster dashboard</li>
+                  <li>Go to your Phantom's "Connect to LinkedIn" section</li>
+                  <li>Click "Reconnect" or use the browser extension to refresh the connection</li>
+                  <li>The extension automatically manages cookie refresh</li>
+                </ol>
+                <p className="mt-2 text-xs">Note: If using the browser extension, cookies refresh automatically. Manual cookies in env vars will expire.</p>
+              </div>
             )}
             {error.includes('Pulse') && (
               <p className="text-red-600 dark:text-red-300 text-sm mt-2">
