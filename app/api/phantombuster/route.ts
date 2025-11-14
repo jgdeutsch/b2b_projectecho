@@ -142,28 +142,69 @@ export async function POST(request: NextRequest) {
       if (outputResponse.data.output) {
         const profilesData = outputResponse.data.output;
         
+        // Log raw output for debugging
+        console.log('Raw PhantomBuster output:', JSON.stringify(profilesData, null, 2));
+        console.log('Output type:', typeof profilesData);
+        console.log('Is array:', Array.isArray(profilesData));
+        if (typeof profilesData === 'object' && !Array.isArray(profilesData)) {
+          console.log('Object keys:', Object.keys(profilesData));
+          console.log('Object values types:', Object.values(profilesData).map(v => ({ type: typeof v, isArray: Array.isArray(v), length: Array.isArray(v) ? v.length : 'N/A' })));
+        }
+        
         // Parse profiles - handle different response formats
         let profiles: Array<{ profileUrl: string; name?: string; headline?: string }> = [];
         
         if (Array.isArray(profilesData)) {
-          profiles = profilesData.map((profile: any) => ({
-            profileUrl: profile.profileUrl || profile.url || profile.linkedinUrl || '',
-            name: profile.name || profile.fullName || null,
-            headline: profile.headline || profile.title || null,
-          })).filter((p: any) => p.profileUrl);
+          console.log('Parsing as array, length:', profilesData.length);
+          profiles = profilesData.map((profile: any) => {
+            const parsed = {
+              profileUrl: profile.profileUrl || profile.url || profile.linkedinUrl || profile.profile || '',
+              name: profile.name || profile.fullName || profile.firstName || null,
+              headline: profile.headline || profile.title || profile.jobTitle || null,
+            };
+            console.log('Parsed profile:', parsed);
+            return parsed;
+          }).filter((p: any) => p.profileUrl);
         } else if (profilesData && typeof profilesData === 'object') {
+          console.log('Parsing as object');
           // Try to extract array from common keys
-          const profilesArray = Object.values(profilesData).find(
+          const allValues = Object.values(profilesData);
+          const profilesArray = allValues.find(
             (val) => Array.isArray(val) && val.length > 0
           ) as any[] | undefined;
           
           if (profilesArray) {
-            profiles = profilesArray.map((profile: any) => ({
-              profileUrl: profile.profileUrl || profile.url || profile.linkedinUrl || '',
-              name: profile.name || profile.fullName || null,
-              headline: profile.headline || profile.title || null,
-            })).filter((p: any) => p.profileUrl);
+            console.log('Found array in object, length:', profilesArray.length);
+            profiles = profilesArray.map((profile: any) => {
+              const parsed = {
+                profileUrl: profile.profileUrl || profile.url || profile.linkedinUrl || profile.profile || profile.linkedin || '',
+                name: profile.name || profile.fullName || profile.firstName || (profile.firstName && profile.lastName ? `${profile.firstName} ${profile.lastName}` : null) || null,
+                headline: profile.headline || profile.title || profile.jobTitle || profile.position || null,
+              };
+              console.log('Parsed profile:', parsed);
+              return parsed;
+            }).filter((p: any) => p.profileUrl);
+          } else {
+            // Try to find nested arrays or CSV-like structures
+            console.log('No array found, checking for nested structures');
+            for (const [key, value] of Object.entries(profilesData)) {
+              console.log(`Checking key "${key}":`, typeof value, Array.isArray(value));
+              if (Array.isArray(value)) {
+                console.log(`Found array at key "${key}", length:`, value.length);
+                profiles = (value as any[]).map((profile: any) => ({
+                  profileUrl: profile.profileUrl || profile.url || profile.linkedinUrl || profile.profile || profile.linkedin || '',
+                  name: profile.name || profile.fullName || profile.firstName || (profile.firstName && profile.lastName ? `${profile.firstName} ${profile.lastName}` : null) || null,
+                  headline: profile.headline || profile.title || profile.jobTitle || profile.position || null,
+                })).filter((p: any) => p.profileUrl);
+                break;
+              }
+            }
           }
+        }
+        
+        console.log('Final parsed profiles count:', profiles.length);
+        if (profiles.length === 0 && profilesData) {
+          console.log('WARNING: No profiles parsed but output exists. Raw data:', JSON.stringify(profilesData, null, 2));
         }
 
         // LinkedIn's visibility limit: max 3,000 likers per post
