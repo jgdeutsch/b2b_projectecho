@@ -59,49 +59,30 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Extract company/page identifier from post URL
-    // LinkedIn post URLs format: https://www.linkedin.com/posts/company-name_or_person-name_post-id
-    const urlMatch = linkedinPostUrl.match(/linkedin\.com\/posts\/([^\/\?]+)/);
-    let companyUrl = null;
-    
-    if (urlMatch) {
-      const identifier = urlMatch[1];
-      // Try company page first (most common)
-      companyUrl = `https://www.linkedin.com/company/${identifier.split('_')[0]}/`;
-    }
-
-    // Launch PhantomBuster agent
-    // For "LinkedIn Post Commenter and Liker Scraper" 
-    // Based on error: requires companyUrl, postEngagersToExtract, and sessionCookie (min 15 chars)
+    // Build arguments based on exact Phantom JSON structure
+    // From Phantom setup JSON view:
+    // - inputType: "linkedinPostUrl"
+    // - postEngagersToExtract: ["likers"] (array!)
+    // - linkedinPostUrl: the post URL
+    // - sessionCookie: LinkedIn session cookie
     const sessionCookie = process.env.LINKEDIN_SESSION_COOKIE || '';
     
-    // Build arguments based on Phantom requirements
-    const argument: any = {};
+    const argument: any = {
+      inputType: 'linkedinPostUrl',
+      postEngagersToExtract: ['likers'], // Array with "likers" to extract people who liked
+      linkedinPostUrl: linkedinPostUrl,
+      pushResultToCRM: false,
+      shouldOnlyRetrievePostsPublishedFromDate: false,
+      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36',
+    };
     
-    // Required: companyUrl
-    if (companyUrl) {
-      argument.companyUrl = companyUrl;
-    } else {
-      // If we can't extract it, try using the post URL's base
-      // Some Phantoms accept the post URL as companyUrl
-      argument.companyUrl = linkedinPostUrl.split('/posts/')[0] + '/';
-    }
-    
-    // Required: postEngagersToExtract (the post URL to scrape)
-    argument.postEngagersToExtract = linkedinPostUrl;
-    
-    // Session cookie: Optional if using PhantomBuster browser extension
-    // The extension automatically manages LinkedIn authentication
-    // Only add if explicitly provided and valid
+    // Session cookie: Required - add if provided, otherwise PhantomBuster extension should handle it
     if (sessionCookie && sessionCookie.length >= 15) {
       argument.sessionCookie = sessionCookie;
       console.log('Using provided session cookie');
     } else {
-      // Don't include sessionCookie - let PhantomBuster extension handle it
-      // Some Phantoms work without explicit sessionCookie when extension is connected
       console.log('No session cookie provided - PhantomBuster extension will handle authentication');
-      // Note: Some Phantoms may still require it, but we'll let PhantomBuster return the error
-      // if the extension isn't properly configured
+      // Note: If extension is connected, PhantomBuster will inject the session cookie automatically
     }
 
     console.log('Launching Phantom with arguments:', {
