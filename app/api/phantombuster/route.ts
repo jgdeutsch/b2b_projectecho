@@ -205,15 +205,50 @@ export async function POST(request: NextRequest) {
           );
         }
         
-        const profilesData = outputData;
+        // Check if PhantomBuster saved results to S3 (common for this Phantom)
+        let jsonUrl: string | null = null;
+        let csvUrl: string | null = null;
+        
+        if (typeof outputData === 'string') {
+          // Extract S3 URLs from output
+          const jsonMatch = outputData.match(/JSON saved at (https:\/\/[^\s]+)/);
+          const csvMatch = outputData.match(/CSV saved at (https:\/\/[^\s]+)/);
+          
+          if (jsonMatch) jsonUrl = jsonMatch[1];
+          if (csvMatch) csvUrl = csvMatch[1];
+          
+          console.log('Found S3 URLs:', { jsonUrl, csvUrl });
+        }
+        
+        let profilesData: any = null;
+        
+        // Fetch results from S3 if URLs are found
+        if (jsonUrl) {
+          try {
+            console.log('Fetching results from S3 JSON URL:', jsonUrl);
+            const s3Response = await axios.get(jsonUrl);
+            profilesData = s3Response.data;
+            console.log('Fetched data from S3, type:', typeof profilesData, 'isArray:', Array.isArray(profilesData));
+          } catch (s3Error: any) {
+            console.error('Error fetching from S3:', s3Error.message);
+            // Fall back to parsing output directly
+            profilesData = outputData;
+          }
+        } else {
+          // No S3 URL found, use output directly
+          profilesData = outputData;
+        }
         
         // Log raw output for debugging
-        console.log('Raw PhantomBuster output:', JSON.stringify(profilesData, null, 2));
-        console.log('Output type:', typeof profilesData);
+        console.log('Profiles data source:', jsonUrl ? 'S3 JSON' : 'direct output');
+        console.log('Profiles data type:', typeof profilesData);
         console.log('Is array:', Array.isArray(profilesData));
+        
         if (typeof profilesData === 'object' && !Array.isArray(profilesData)) {
           console.log('Object keys:', Object.keys(profilesData));
-          console.log('Object values types:', Object.values(profilesData).map(v => ({ type: typeof v, isArray: Array.isArray(v), length: Array.isArray(v) ? v.length : 'N/A' })));
+          if (Object.keys(profilesData).length > 0) {
+            console.log('First key sample:', Object.keys(profilesData)[0], '=', typeof Object.values(profilesData)[0]);
+          }
         }
         
         // Parse profiles - handle different response formats
@@ -223,11 +258,10 @@ export async function POST(request: NextRequest) {
           console.log('Parsing as array, length:', profilesData.length);
           profiles = profilesData.map((profile: any) => {
             const parsed = {
-              profileUrl: profile.profileUrl || profile.url || profile.linkedinUrl || profile.profile || '',
-              name: profile.name || profile.fullName || profile.firstName || null,
-              headline: profile.headline || profile.title || profile.jobTitle || null,
+              profileUrl: profile.profileUrl || profile.url || profile.linkedinUrl || profile.profile || profile.linkedin || profile['Profile URL'] || '',
+              name: profile.name || profile.fullName || profile.firstName || (profile.firstName && profile.lastName ? `${profile.firstName} ${profile.lastName}` : null) || profile['Full Name'] || null,
+              headline: profile.headline || profile.title || profile.jobTitle || profile.position || profile['Headline'] || null,
             };
-            console.log('Parsed profile:', parsed);
             return parsed;
           }).filter((p: any) => p.profileUrl);
         } else if (profilesData && typeof profilesData === 'object') {
@@ -242,24 +276,22 @@ export async function POST(request: NextRequest) {
             console.log('Found array in object, length:', profilesArray.length);
             profiles = profilesArray.map((profile: any) => {
               const parsed = {
-                profileUrl: profile.profileUrl || profile.url || profile.linkedinUrl || profile.profile || profile.linkedin || '',
-                name: profile.name || profile.fullName || profile.firstName || (profile.firstName && profile.lastName ? `${profile.firstName} ${profile.lastName}` : null) || null,
-                headline: profile.headline || profile.title || profile.jobTitle || profile.position || null,
+                profileUrl: profile.profileUrl || profile.url || profile.linkedinUrl || profile.profile || profile.linkedin || profile['Profile URL'] || '',
+                name: profile.name || profile.fullName || profile.firstName || (profile.firstName && profile.lastName ? `${profile.firstName} ${profile.lastName}` : null) || profile['Full Name'] || null,
+                headline: profile.headline || profile.title || profile.jobTitle || profile.position || profile['Headline'] || null,
               };
-              console.log('Parsed profile:', parsed);
               return parsed;
             }).filter((p: any) => p.profileUrl);
           } else {
             // Try to find nested arrays or CSV-like structures
             console.log('No array found, checking for nested structures');
             for (const [key, value] of Object.entries(profilesData)) {
-              console.log(`Checking key "${key}":`, typeof value, Array.isArray(value));
-              if (Array.isArray(value)) {
+              if (Array.isArray(value) && value.length > 0) {
                 console.log(`Found array at key "${key}", length:`, value.length);
                 profiles = (value as any[]).map((profile: any) => ({
-                  profileUrl: profile.profileUrl || profile.url || profile.linkedinUrl || profile.profile || profile.linkedin || '',
-                  name: profile.name || profile.fullName || profile.firstName || (profile.firstName && profile.lastName ? `${profile.firstName} ${profile.lastName}` : null) || null,
-                  headline: profile.headline || profile.title || profile.jobTitle || profile.position || null,
+                  profileUrl: profile.profileUrl || profile.url || profile.linkedinUrl || profile.profile || profile.linkedin || profile['Profile URL'] || '',
+                  name: profile.name || profile.fullName || profile.firstName || (profile.firstName && profile.lastName ? `${profile.firstName} ${profile.lastName}` : null) || profile['Full Name'] || null,
+                  headline: profile.headline || profile.title || profile.jobTitle || profile.position || profile['Headline'] || null,
                 })).filter((p: any) => p.profileUrl);
                 break;
               }
@@ -269,7 +301,14 @@ export async function POST(request: NextRequest) {
         
         console.log('Final parsed profiles count:', profiles.length);
         if (profiles.length === 0 && profilesData) {
-          console.log('WARNING: No profiles parsed but output exists. Raw data:', JSON.stringify(profilesData, null, 2));
+          console.log('WARNING: No profiles parsed. Sample data structure:', 
+            Array.isArray(profilesData) ? `Array[${profilesData.length}]` : 
+            typeof profilesData === 'object' ? `Object with keys: ${Object.keys(profilesData).slice(0, 5).join(', ')}` :
+            typeof profilesData
+          );
+          if (typeof profilesData === 'object' && !Array.isArray(profilesData) && Object.keys(profilesData).length > 0) {
+            console.log('Sample first entry:', JSON.stringify(Object.values(profilesData)[0], null, 2));
+          }
         }
 
         // LinkedIn's visibility limit: max 3,000 likers per post
@@ -296,9 +335,11 @@ export async function POST(request: NextRequest) {
           postId: post.id,
           containerId,
           debug: {
-            rawOutput: profilesData,
+            jsonUrl,
+            csvUrl,
             parsedCount: profiles.length,
             savedCount: savedProfiles.length,
+            dataSource: jsonUrl ? 'S3' : 'direct',
           },
         });
       }
