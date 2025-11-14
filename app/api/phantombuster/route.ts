@@ -65,7 +65,6 @@ export async function POST(request: NextRequest) {
     // - postEngagersToExtract: ["likers"] (array!)
     // - linkedinPostUrl: the post URL
     // - sessionCookie: LinkedIn session cookie
-    const sessionCookie = process.env.LINKEDIN_SESSION_COOKIE || '';
     
     const argument: any = {
       inputType: 'linkedinPostUrl',
