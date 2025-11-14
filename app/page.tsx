@@ -22,6 +22,8 @@ export default function Home() {
   const [newProjectName, setNewProjectName] = useState('');
   const [showNewProjectForm, setShowNewProjectForm] = useState(false);
   const [linkedinPostUrl, setLinkedinPostUrl] = useState('');
+  const [sessionCookie, setSessionCookie] = useState('');
+  const [showCookieInstructions, setShowCookieInstructions] = useState(false);
   const [profiles, setProfiles] = useState<LinkedInProfile[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -153,12 +155,16 @@ export default function Home() {
       const requestBody = {
         linkedinPostUrl,
         projectId: selectedProjectId,
+        sessionCookie: sessionCookie.trim() || undefined,
       };
 
       addLog('api', 'POST /api/phantombuster', {
         method: 'POST',
         endpoint: '/api/phantombuster',
-        body: requestBody,
+        body: {
+          ...requestBody,
+          sessionCookie: sessionCookie ? `${sessionCookie.substring(0, 10)}...` : 'not provided',
+        },
       });
 
       const startTime = Date.now();
@@ -344,9 +350,69 @@ export default function Home() {
                 Note: Pulse posts (linkedin.com/pulse/...) are not supported. LinkedIn limits visibility to 3,000 profiles per post.
               </p>
             </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label
+                  htmlFor="session-cookie"
+                  className="block text-sm font-medium text-gray-700 dark:text-gray-300"
+                >
+                  LinkedIn Session Cookie
+                  <span className="text-red-500 ml-1">*</span>
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setShowCookieInstructions(!showCookieInstructions)}
+                  className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline"
+                >
+                  {showCookieInstructions ? 'Hide instructions' : 'How to get it?'}
+                </button>
+              </div>
+              
+              {showCookieInstructions && (
+                <div className="mb-3 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg text-sm">
+                  <p className="font-medium text-blue-900 dark:text-blue-200 mb-2">📋 How to get your LinkedIn Session Cookie:</p>
+                  <ol className="list-decimal list-inside space-y-1.5 text-blue-800 dark:text-blue-300 mb-3">
+                    <li>Go to your <a href="https://phantombuster.com/2589019275719485/phantoms/6317160409132028/setup" target="_blank" rel="noopener noreferrer" className="underline font-medium">PhantomBuster dashboard</a></li>
+                    <li>Open your Phantom: <strong>LinkedIn Post Commenter and Liker Scraper</strong></li>
+                    <li>Click the <strong>three-dot menu (⋮)</strong> in the top right corner</li>
+                    <li>Select <strong>"Switch to JSON view"</strong></li>
+                    <li>Find and copy the <code className="bg-blue-100 dark:bg-blue-900 px-1.5 py-0.5 rounded text-xs font-mono">sessionCookie</code> value</li>
+                    <li>It's a long string starting with <code className="bg-blue-100 dark:bg-blue-900 px-1.5 py-0.5 rounded text-xs font-mono">AQEDAQ...</code></li>
+                    <li>Paste it in the field above</li>
+                  </ol>
+                  <div className="mt-3 p-2 bg-blue-100 dark:bg-blue-900/30 rounded text-xs text-blue-800 dark:text-blue-300">
+                    <p className="font-medium mb-1">💡 Important Notes:</p>
+                    <ul className="list-disc list-inside space-y-0.5 ml-1">
+                      <li>Cookies expire periodically (usually every few weeks)</li>
+                      <li>When scraping fails, get a fresh cookie from your Phantom's JSON view</li>
+                      <li>The cookie is stored only in your browser session (not saved permanently)</li>
+                    </ul>
+                  </div>
+                </div>
+              )}
+
+              <input
+                id="session-cookie"
+                type="password"
+                value={sessionCookie}
+                onChange={(e) => {
+                  setSessionCookie(e.target.value);
+                  if (error) setError(null);
+                }}
+                placeholder="AQEDAQa9EbUFgKS4AAABmlOAXOc..."
+                className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:bg-gray-700 dark:text-white font-mono text-sm"
+                required
+                disabled={loading || !selectedProjectId}
+              />
+              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                Required for authentication. Get it from your Phantom's JSON setup view (click "How to get it?" above).
+              </p>
+            </div>
+
             <button
               type="submit"
-              disabled={loading || !linkedinPostUrl || !selectedProjectId}
+              disabled={loading || !linkedinPostUrl || !selectedProjectId || !sessionCookie.trim()}
               className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-semibold py-3 px-6 rounded-lg transition-colors duration-200"
             >
               {loading ? 'Scraping profiles...' : 'Scrape Reactors'}
@@ -400,8 +466,8 @@ export default function Home() {
                   {profile.profileUrl && (
                     <a
                       href={profile.profileUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
+            target="_blank"
+            rel="noopener noreferrer"
                       className="text-indigo-600 dark:text-indigo-400 hover:underline font-medium"
                     >
                       {profile.name || 'LinkedIn Profile'}
@@ -434,7 +500,7 @@ export default function Home() {
             <p className="mt-4 text-gray-600 dark:text-gray-300">
               This may take a few minutes...
             </p>
-          </div>
+        </div>
         )}
 
         <Terminal logs={logs} />

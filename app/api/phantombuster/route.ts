@@ -13,7 +13,7 @@ import {
 
 export async function POST(request: NextRequest) {
   try {
-    const { linkedinPostUrl, projectId } = await request.json();
+    const { linkedinPostUrl, projectId, sessionCookie: requestSessionCookie } = await request.json();
 
     // Validate project ID
     if (!projectId) {
@@ -77,20 +77,18 @@ export async function POST(request: NextRequest) {
     };
     
     // Session cookie: REQUIRED by Phantom schema
-    // Note: Even with PhantomBuster extension connected, the API call requires this parameter
-    // The extension manages cookie refresh, but you still need to provide it initially
-    // Options:
-    // 1. Get cookie from PhantomBuster extension and add to env vars (will need periodic updates)
-    // 2. Use the cookie from your Phantom's JSON setup (copy from PhantomBuster dashboard)
-    if (sessionCookie && sessionCookie.length >= 15) {
-      argument.sessionCookie = sessionCookie;
-      console.log('Using session cookie from environment variable');
+    // Priority: 1) From request body (UI input), 2) From environment variable
+    const sessionCookie = requestSessionCookie || process.env.LINKEDIN_SESSION_COOKIE || '';
+    
+    if (sessionCookie && sessionCookie.trim().length >= 15) {
+      argument.sessionCookie = sessionCookie.trim();
+      console.log('Using session cookie', requestSessionCookie ? 'from request' : 'from environment variable');
     } else {
       // Return error - cookie is required
       return NextResponse.json(
         {
           error: 'LinkedIn session cookie required',
-          details: 'This Phantom requires a LinkedIn session cookie. Get it from: 1) Your Phantom\'s JSON setup view (copy the sessionCookie value), or 2) PhantomBuster browser extension. Add it as LINKEDIN_SESSION_COOKIE in your environment variables. Note: Cookies expire and need periodic updates.',
+          details: 'This Phantom requires a LinkedIn session cookie (at least 15 characters). Get it from your Phantom\'s JSON setup view: Open your Phantom → Switch to JSON view → Copy the sessionCookie value.',
           helpUrl: 'https://phantombuster.com/2589019275719485/phantoms/6317160409132028/setup',
         },
         { status: 400 }
