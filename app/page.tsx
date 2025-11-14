@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Terminal, { LogEntry } from '@/components/Terminal';
 
 interface LinkedInProfile {
   name?: string;
@@ -24,50 +25,110 @@ export default function Home() {
   const [profiles, setProfiles] = useState<LinkedInProfile[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+
+  // Helper function to add logs
+  const addLog = (
+    type: LogEntry['type'],
+    message: string,
+    data?: any
+  ) => {
+    const logEntry: LogEntry = {
+      id: `${Date.now()}-${Math.random()}`,
+      timestamp: new Date(),
+      type,
+      message,
+      data,
+    };
+    setLogs((prev) => [...prev, logEntry]);
+  };
 
   useEffect(() => {
+    addLog('info', 'Application initialized');
     fetchProjects();
   }, []);
 
   const fetchProjects = async () => {
+    addLog('operation', 'Fetching projects from API');
     try {
+      addLog('api', 'GET /api/projects', { method: 'GET', endpoint: '/api/projects' });
       const response = await fetch('/api/projects');
       const data = await response.json();
+      
+      addLog('api', `GET /api/projects response`, {
+        status: response.status,
+        statusText: response.statusText,
+        ok: response.ok,
+        data,
+      });
+
       if (data.success) {
+        addLog('success', `Fetched ${data.projects.length} project(s)`, data.projects);
         setProjects(data.projects);
         if (data.projects.length > 0 && !selectedProjectId) {
-          setSelectedProjectId(data.projects[0].id);
+          const firstProject = data.projects[0];
+          setSelectedProjectId(firstProject.id);
+          addLog('operation', `Auto-selected project: ${firstProject.name} (ID: ${firstProject.id})`);
         }
+      } else {
+        addLog('error', 'Failed to fetch projects', data);
       }
-    } catch (err) {
+    } catch (err: any) {
+      addLog('error', 'Error fetching projects', { error: err.message, stack: err.stack });
       console.error('Error fetching projects:', err);
     }
   };
 
   const handleCreateProject = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newProjectName.trim()) return;
+    if (!newProjectName.trim()) {
+      addLog('warning', 'Project creation cancelled: empty name');
+      return;
+    }
+
+    const projectName = newProjectName.trim();
+    addLog('operation', `Creating project: "${projectName}"`);
 
     try {
+      const requestBody = { name: projectName };
+      addLog('api', 'POST /api/projects', {
+        method: 'POST',
+        endpoint: '/api/projects',
+        body: requestBody,
+      });
+
       const response = await fetch('/api/projects', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ name: newProjectName.trim() }),
+        body: JSON.stringify(requestBody),
       });
 
       const data = await response.json();
+      
+      addLog('api', `POST /api/projects response`, {
+        status: response.status,
+        statusText: response.statusText,
+        ok: response.ok,
+        data,
+      });
+
       if (data.success) {
+        addLog('success', `Project created successfully: "${data.project.name}" (ID: ${data.project.id})`, data.project);
         setProjects([...projects, data.project]);
         setSelectedProjectId(data.project.id);
         setNewProjectName('');
         setShowNewProjectForm(false);
       } else {
-        setError(data.error || 'Failed to create project');
+        const errorMsg = data.error || 'Failed to create project';
+        addLog('error', `Project creation failed: ${errorMsg}`, data);
+        setError(errorMsg);
       }
     } catch (err: any) {
-      setError(err.message || 'Failed to create project');
+      const errorMsg = err.message || 'Failed to create project';
+      addLog('error', `Project creation error: ${errorMsg}`, { error: err.message, stack: err.stack });
+      setError(errorMsg);
     }
   };
 
@@ -75,54 +136,96 @@ export default function Home() {
     e.preventDefault();
     
     if (!selectedProjectId) {
+      addLog('warning', 'Scraping cancelled: No project selected');
       setError('Please select or create a project first');
       return;
     }
+
+    const selectedProject = projects.find(p => p.id === selectedProjectId);
+    addLog('operation', `Starting scrape for project: "${selectedProject?.name}" (ID: ${selectedProjectId})`);
+    addLog('info', `LinkedIn Post URL: ${linkedinPostUrl}`);
 
     setLoading(true);
     setError(null);
     setProfiles([]);
 
     try {
+      const requestBody = {
+        linkedinPostUrl,
+        projectId: selectedProjectId,
+      };
+
+      addLog('api', 'POST /api/phantombuster', {
+        method: 'POST',
+        endpoint: '/api/phantombuster',
+        body: requestBody,
+      });
+
+      const startTime = Date.now();
       const response = await fetch('/api/phantombuster', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ 
-          linkedinPostUrl,
-          projectId: selectedProjectId,
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       const data = await response.json();
+      const duration = Date.now() - startTime;
+
+      addLog('api', `POST /api/phantombuster response (${duration}ms)`, {
+        status: response.status,
+        statusText: response.statusText,
+        ok: response.ok,
+        duration: `${duration}ms`,
+        data: {
+          success: data.success,
+          profilesCount: Array.isArray(data.profiles) ? data.profiles.length : 'unknown',
+          postId: data.postId,
+          containerId: data.containerId,
+        },
+      });
 
       if (!response.ok) {
         // Show detailed error message if available
         const errorMessage = data.error || 'Failed to scrape profiles';
         const errorDetails = data.details ? ` ${data.details}` : '';
+        addLog('error', `Scraping failed: ${errorMessage}${errorDetails}`, data);
         throw new Error(errorMessage + errorDetails);
       }
 
       // Handle different response formats
+      let extractedProfiles: LinkedInProfile[] = [];
       if (Array.isArray(data.profiles)) {
-        setProfiles(data.profiles);
+        extractedProfiles = data.profiles;
       } else if (data.profiles && Array.isArray(data.profiles.profiles)) {
-        setProfiles(data.profiles.profiles);
+        extractedProfiles = data.profiles.profiles;
       } else if (data.profiles && typeof data.profiles === 'object') {
         // If it's an object, try to extract array from common keys
         const profilesArray = Object.values(data.profiles).find(
           (val) => Array.isArray(val) && val.length > 0
         ) as LinkedInProfile[] | undefined;
-        setProfiles(profilesArray || []);
+        extractedProfiles = profilesArray || [];
+      }
+
+      if (extractedProfiles.length > 0) {
+        addLog('success', `Scraping completed: Found ${extractedProfiles.length} profile(s)`, {
+          count: extractedProfiles.length,
+          sample: extractedProfiles.slice(0, 3), // Log first 3 profiles as sample
+        });
+        setProfiles(extractedProfiles);
       } else {
+        addLog('warning', 'Scraping completed but no profiles found', data);
         setProfiles([]);
       }
     } catch (err: any) {
-      setError(err.message || 'An error occurred');
+      const errorMsg = err.message || 'An error occurred';
+      addLog('error', `Scraping error: ${errorMsg}`, { error: err.message, stack: err.stack });
+      setError(errorMsg);
       console.error('Error:', err);
     } finally {
       setLoading(false);
+      addLog('operation', 'Scraping operation completed');
     }
   };
 
@@ -154,7 +257,12 @@ export default function Home() {
               <select
                 id="project-select"
                 value={selectedProjectId || ''}
-                onChange={(e) => setSelectedProjectId(Number(e.target.value))}
+                onChange={(e) => {
+                  const newProjectId = Number(e.target.value);
+                  const selectedProject = projects.find(p => p.id === newProjectId);
+                  addLog('operation', `Project selected: "${selectedProject?.name || 'Unknown'}" (ID: ${newProjectId})`);
+                  setSelectedProjectId(newProjectId);
+                }}
                 className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
                 disabled={loading}
               >
@@ -219,7 +327,11 @@ export default function Home() {
                 type="url"
                 value={linkedinPostUrl}
                 onChange={(e) => {
-                  setLinkedinPostUrl(e.target.value);
+                  const newUrl = e.target.value;
+                  setLinkedinPostUrl(newUrl);
+                  if (newUrl) {
+                    addLog('info', `LinkedIn URL entered: ${newUrl}`);
+                  }
                   // Clear error when user starts typing
                   if (error) setError(null);
                 }}
@@ -316,6 +428,8 @@ export default function Home() {
             </p>
           </div>
         )}
+
+        <Terminal logs={logs} />
       </main>
     </div>
   );
