@@ -76,20 +76,25 @@ export async function POST(request: NextRequest) {
       userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36',
     };
     
-    // Session cookie: Required by Phantom schema validation
-    // PhantomBuster extension will override this with the actual cookie if connected
-    // If extension is not connected, we need a valid cookie from env var
+    // Session cookie: REQUIRED by Phantom schema
+    // Note: Even with PhantomBuster extension connected, the API call requires this parameter
+    // The extension manages cookie refresh, but you still need to provide it initially
+    // Options:
+    // 1. Get cookie from PhantomBuster extension and add to env vars (will need periodic updates)
+    // 2. Use the cookie from your Phantom's JSON setup (copy from PhantomBuster dashboard)
     if (sessionCookie && sessionCookie.length >= 15) {
       argument.sessionCookie = sessionCookie;
-      console.log('Using provided session cookie from environment variable');
+      console.log('Using session cookie from environment variable');
     } else {
-      // The Phantom schema requires sessionCookie, but if the extension is connected,
-      // PhantomBuster will inject the real cookie automatically
-      // However, we still need to provide a placeholder to pass schema validation
-      // Using a placeholder that PhantomBuster will replace with extension cookie
-      argument.sessionCookie = 'EXTENSION_WILL_INJECT'; // Placeholder - extension will replace
-      console.log('No session cookie in env - using placeholder (PhantomBuster extension should inject real cookie)');
-      console.warn('WARNING: If extension is not connected, this will fail. Add LINKEDIN_SESSION_COOKIE to env vars or connect the extension.');
+      // Return error - cookie is required
+      return NextResponse.json(
+        {
+          error: 'LinkedIn session cookie required',
+          details: 'This Phantom requires a LinkedIn session cookie. Get it from: 1) Your Phantom\'s JSON setup view (copy the sessionCookie value), or 2) PhantomBuster browser extension. Add it as LINKEDIN_SESSION_COOKIE in your environment variables. Note: Cookies expire and need periodic updates.',
+          helpUrl: 'https://phantombuster.com/2589019275719485/phantoms/6317160409132028/setup',
+        },
+        { status: 400 }
+      );
     }
 
     console.log('Launching Phantom with arguments:', {
